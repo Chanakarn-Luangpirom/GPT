@@ -101,23 +101,43 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.embedding_table = nn.Embedding(vocab_size,vocab_size) ## vocab_size x embedding dimension
 
-    def forward(self,contexts,targets):
+    def forward(self,contexts,targets = None):
         logits = self.embedding_table(contexts) ## batch_size x context_length x embedding dimension
-        B,N,D = logits.shape
-        logits = logits.view(B*N,D)
-        targets = targets.view(B*N)  
-        print('targets:',targets)
 
-
-        loss = F.cross_entropy(logits,targets)
+        if targets is None:  ## Use for generating
+            loss = None
+        else:
+            B,N,D = logits.shape
+            logits = logits.view(B*N,D)
+            targets = targets.view(B*N)  
+            print('targets:',targets)
+            loss = F.cross_entropy(logits,targets)
 
         return logits,loss
+    
+    def generate(self,contexts,max_tokens):
+        for i in range(max_tokens):
+            logits, loss = self.forward(contexts)
+            logits = logits[:,-1,:] # Take only the last element to generate new text --> Now logits is batch_size x embedding_dimision
+            probas = F.softmax(logits,dim = 1)
+            next_char = torch.multinomial(probas,num_samples = 1) ## sample next char from a probability distribution
+            contexts = torch.cat((contexts,next_char),dim = 1)
+        return contexts
+
+
     
 
 model = BigramLanguageModel(vocab_size)
 logits, loss = model(x_batch,y_batch)
 print('logits shape:',logits.shape)
 print('The current loss: ',loss)
+
+print(decoder)
+test_context = torch.zeros((1,1),dtype = torch.int64) ## Recall that zero is new line. --> Giving a new line as context
+print('Generate Text using test context: ')
+print(decode(model.generate(test_context, max_tokens = 100)[0].tolist())) ## Sup
+
+
 
 
     
