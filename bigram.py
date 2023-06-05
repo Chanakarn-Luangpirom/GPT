@@ -1,4 +1,7 @@
 import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
 
 with open('input.txt','r',encoding='utf-8') as f:
     text = f.read()
@@ -42,24 +45,25 @@ val_data = data[n:]
 print('size of train:',len(train_data))
 print('size of val:',len(val_data))
 
-
-### Single Data Loader
 context_length = 8
 batch_size = 4
-
-x = train_data[:context_length]
-y = train_data[1:context_length+1]
-
-for i in range(context_length):
-    context = x[:i+1]
-    target = y[i]
-    print('input:', context)
-    print('target:', target)
-    print('--------')
+vocab_size = len(characters)
 
 
+### Single Data Loader
+# x = train_data[:context_length]
+# y = train_data[1:context_length+1]
 
-## Batch Data Loader
+# for i in range(context_length):
+#     context = x[:i+1]
+#     target = y[i]
+#     print('input:', context)
+#     print('target:', target)
+#     print('--------')
+
+
+
+### Batch Data Loader
 torch.manual_seed(123)
 def generate_batch(split = 'train'):
     if split == 'train':
@@ -80,16 +84,40 @@ def generate_batch(split = 'train'):
     return torch.stack(x_batch),torch.stack(y_batch)
 
 x_batch,y_batch = generate_batch()
-print(x_batch)
-print(y_batch)
+print('x_batch:', x_batch) ## batch_size x context_length
+print('y_batch:', y_batch) ## batch_size x context_length
 
 for b in range(batch_size):
     for i in range(context_length):
         context = x_batch[b,:i+1]
         target = y_batch[b,i]
-        print('input:', context)
-        print('target:', target)
-        print('--------')
+        print('input:', context, ' target:',target)
+    print('--------')
+
+
+## Baseline BigramLanguageModel: Predicts the next character based on the previous character.
+class BigramLanguageModel(nn.Module):
+    def __init__(self,vocab_size):
+        super().__init__()
+        self.embedding_table = nn.Embedding(vocab_size,vocab_size) ## vocab_size x embedding dimension
+
+    def forward(self,contexts,targets):
+        logits = self.embedding_table(contexts) ## batch_size x context_length x embedding dimension
+        B,N,D = logits.shape
+        logits = logits.view(B*N,D)
+        targets = targets.view(B*N)  
+        print('targets:',targets)
+
+
+        loss = F.cross_entropy(logits,targets)
+
+        return logits,loss
+    
+
+model = BigramLanguageModel(vocab_size)
+logits, loss = model(x_batch,y_batch)
+print('logits shape:',logits.shape)
+print('The current loss: ',loss)
 
 
     
