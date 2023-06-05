@@ -46,7 +46,7 @@ print('size of train:',len(train_data))
 print('size of val:',len(val_data))
 
 context_length = 8
-batch_size = 4
+batch_size = 32
 vocab_size = len(characters)
 
 
@@ -110,7 +110,7 @@ class BigramLanguageModel(nn.Module):
             B,N,D = logits.shape
             logits = logits.view(B*N,D)
             targets = targets.view(B*N)  
-            print('targets:',targets)
+            # print('targets:',targets)
             loss = F.cross_entropy(logits,targets)
 
         return logits,loss
@@ -135,7 +135,26 @@ print('The current loss: ',loss)
 print(decoder)
 test_context = torch.zeros((1,1),dtype = torch.int64) ## Recall that zero is new line. --> Giving a new line as context
 print('Generate Text using test context: ')
-print(decode(model.generate(test_context, max_tokens = 100)[0].tolist())) ## Sup
+print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
+
+optimizer = torch.optim.AdamW(model.parameters(),lr = 1e-3)
+
+for step in range(10000):
+    x_batch, y_batch = generate_batch('train')
+
+    #Evaluate Loss and Optimize
+    logits, loss = model(x_batch,y_batch)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    if step%1000==0:
+        print('Currently at step:',step)
+print(loss.item())
+
+test_context = torch.zeros((1,1),dtype = torch.int64) ## Recall that zero is new line. --> Giving a new line as context
+print('Generate Text using test context: ')
+print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
+
 
 
 
