@@ -48,7 +48,7 @@ print('size of val:',len(val_data))
 context_length = 8
 batch_size = 4
 vocab_size = len(characters)
-
+emb_dim = 32
 
 ### Single Data Loader
 # x = train_data[:context_length]
@@ -99,10 +99,12 @@ for b in range(batch_size):
 class BigramLanguageModel(nn.Module):
     def __init__(self,vocab_size):
         super().__init__()
-        self.embedding_table = nn.Embedding(vocab_size,vocab_size) ## vocab_size x embedding dimension
+        self.embedding_table = nn.Embedding(vocab_size,emb_dim) ## vocab_size x embedding dimension
+        self.head = nn.Linear(emb_dim,vocab_size)
 
     def forward(self,contexts,targets = None):
-        logits = self.embedding_table(contexts) ## batch_size x context_length x embedding dimension
+         token_emb = self.embedding_table(contexts)
+         ## batch_size x context_length x embedding dimension
 
         if targets is None:  ## Use for generating
             loss = None
