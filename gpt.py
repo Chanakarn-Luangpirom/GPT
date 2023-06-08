@@ -120,10 +120,10 @@ class BigramLanguageModel(nn.Module):
 
 
     def forward(self,contexts,targets = None):
-        # B, L  = contexts.shape 
+        B, L  = contexts.shape 
         token_emb = self.embedding_table(contexts) ## batch_size x context_length x embedding dimension
-        # position_emb = self.position_embedding_table(torch.arange(L,device = device)) ## context_length x embbedding dimension
-        # x = token_emb + position_emb
+        position_emb = self.position_embedding_table(torch.arange(L,device = device)) ## context_length x embbedding dimension
+        x = token_emb + position_emb
         logits = self.head(token_emb) ## batch_size x context_length x vocab_size
         if targets is None:  ## Use for generating
             loss = None
@@ -153,10 +153,10 @@ logits, loss = model(x_batch,y_batch)
 print('logits shape:',logits.shape)
 print('The current loss: ',loss)
 
-print(decoder)
-test_context = torch.zeros((1,1),dtype = torch.int64) ## Recall that zero is new line. --> Giving a new line as context
-print('Generate Text using test context: ')
-print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
+# print(decoder)
+# test_context = torch.zeros((1,1),dtype = torch.int64) ## Recall that zero is new line. --> Giving a new line as context
+# print('Generate Text using test context: ')
+# print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
 
 @torch.no_grad()
 def estimate_loss():
@@ -200,7 +200,7 @@ print(loss.item())
 
 test_context = torch.zeros((1,1),dtype = torch.int64) 
 print('Generate Text using test context: ')
-print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
+print(decode(model.generate(test_context, max_tokens = 7)[0].tolist()))
 
 
 
