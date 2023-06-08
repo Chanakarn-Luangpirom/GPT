@@ -3,6 +3,20 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 
+### Params
+batch_size = 32
+context_length = 8
+train_iters = 10000
+
+estimate_loss_interval = 1000
+estimate_loss_iterations = 200
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+
+
+
 with open('input.txt','r',encoding='utf-8') as f:
     text = f.read()
 print('Length of Text:',len(text))
@@ -45,8 +59,7 @@ val_data = data[n:]
 print('size of train:',len(train_data))
 print('size of val:',len(val_data))
 
-context_length = 8
-batch_size = 4
+
 vocab_size = len(characters)
 emb_dim = 32
 
@@ -81,7 +94,9 @@ def generate_batch(split = 'train'):
 
         x_batch.append(x)
         y_batch.append(y)
-    return torch.stack(x_batch),torch.stack(y_batch)
+    x_batch, y_batch = torch.stack(x_batch).to(device),torch.stack(y_batch).to(device)
+
+    return x_batch,y_batch
 
 x_batch,y_batch = generate_batch()
 print('x_batch:', x_batch) ## batch_size x context_length
@@ -112,7 +127,7 @@ class BigramLanguageModel(nn.Module):
             B,N,D = logits.shape
             logits = logits.view(B*N,D)
             targets = targets.view(B*N)  
-            print('targets:',targets)
+            # print('targets:',targets)
             loss = F.cross_entropy(logits,targets)
 
         return logits,loss
@@ -137,7 +152,52 @@ print('The current loss: ',loss)
 print(decoder)
 test_context = torch.zeros((1,1),dtype = torch.int64) ## Recall that zero is new line. --> Giving a new line as context
 print('Generate Text using test context: ')
-print(decode(model.generate(test_context, max_tokens = 100)[0].tolist())) ## Sup
+print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
+
+@torch.no_grad()
+def estimate_loss():
+    ### To do: Estimate Loss of Train and Validation Set Over estimate_loss_iterations
+    model.eval()
+    training_loss = 0
+    validation_loss = 0
+
+    #Estimate Train Loss
+    for i in range(estimate_loss_iterations):
+        x_batch,y_batch = generate_batch('train')
+        logits, loss = model.forward(x_batch,y_batch)
+        training_loss += loss
+
+    #Estimate Val Loss
+    for i in range(estimate_loss_iterations):
+        x_batch,y_batch = generate_batch('val')
+        logits, loss = model.forward(x_batch,y_batch)
+        validation_loss += loss
+    return training_loss/estimate_loss_iterations, validation_loss/estimate_loss_iterations
+
+
+## Retest the Model After Training
+optimizer = torch.optim.AdamW(model.parameters(),lr = 1e-3)
+for step in range(train_iters):
+    x_batch, y_batch = generate_batch('train')
+
+    if step%estimate_loss_interval==0:
+        print('Currently at step:',step)
+        training_loss,validation_loss = estimate_loss()
+        print('Training Loss: ',training_loss.item())
+        print('Validation Loss:',validation_loss.item())
+
+    #Evaluate Loss and Optimize
+    logits, loss = model(x_batch,y_batch)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+print(loss.item())
+
+test_context = torch.zeros((1,1),dtype = torch.int64) 
+print('Generate Text using test context: ')
+print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
+
 
 
 
