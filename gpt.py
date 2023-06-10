@@ -110,6 +110,31 @@ for b in range(batch_size):
         print('input:', context, ' target:',target)
     print('--------')
 
+class Head(nn.Module):
+    def __init__(self, head_size):
+        super().__init__()
+        self.key = nn.Linear(emb_dim, head_size, bias = False)
+        self.query = nn.Linear(emb_dim, head_size, bias = False)
+        self.value = nn.Linear(emb_dim,head_size, bias = False)
+        self.register_buffer('tril', torch.tril(torch.ones(context_length, context_length)))  ## Register Buffer is not trained by the optimizer
+
+    def forward(self,x):
+        #(B, context_length, head_size)
+        B, T, hs = x.shape
+        k = self.key(x)    
+        q = self.query(x)
+        v = self.value(x)
+
+        head_size = k.shape[-1]
+
+        weights = q @ k.transpose(-2,-1)
+        weights = weights * head_size**-0.5
+        weights = weights.masked_fill(self.tril[:T,:T]==0, float('-inf'))  # Using :T because input context_size is smaller than the context size used in the model (T <= context_length)
+        weights = F.softmax(weights, dim = -1)
+        output = weights @ v # (B,context,context) @ (B, context, head) --> (B, context, head)
+        return output
+        
+
 
 
 class GPTLanguageModel(nn.Module):
@@ -117,7 +142,8 @@ class GPTLanguageModel(nn.Module):
         super().__init__()
         self.embedding_table = nn.Embedding(vocab_size,emb_dim) ## vocab_size x embedding dimension
         self.position_embedding_table = nn.Embedding(context_length, emb_dim)
-        self.head = nn.Linear(emb_dim,vocab_size)
+        self.attention_head = Head(head_size = 16)
+        self.output_head = nn.Linear(16,vocab_size) #emb_dim x vocab_size
 
 
     def forward(self,contexts,targets = None):
@@ -125,20 +151,20 @@ class GPTLanguageModel(nn.Module):
         token_emb = self.embedding_table(contexts) ## batch_size x context_length x embedding dimension
         position_emb = self.position_embedding_table(torch.arange(L,device = device)) ## context_length x embbedding dimension
         x = token_emb + position_emb
-        logits = self.head(token_emb) ## batch_size x context_length x vocab_size
+        x = self.attention_head(x) ## (B,context,head_size)
+        logits = self.output_head(x) ## batch_size x context_length x vocab_size
         if targets is None:  ## Use for generating
             loss = None
         else:
             B,N,D = logits.shape
             logits = logits.view(B*N,D)
             targets = targets.view(B*N)  
-            # print('targets:',targets)
             loss = F.cross_entropy(logits,targets)
 
         return logits,loss
     
     def generate(self,contexts,max_tokens):
-        ## Input contexts: B x context_size
+        ## Input contexts: B x (Input context size)
         for i in range(max_tokens):
             contexts_cropped = contexts[:, -context_length:]  # Crop the context to context_length size
             logits, loss = self.forward(contexts_cropped)
@@ -179,6 +205,8 @@ def estimate_loss():
         x_batch,y_batch = generate_batch('val')
         logits, loss = model.forward(x_batch,y_batch)
         validation_loss += loss
+
+    model.train() #Back to training mode
     return training_loss/estimate_loss_iterations, validation_loss/estimate_loss_iterations
 
 
