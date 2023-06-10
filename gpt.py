@@ -6,10 +6,11 @@ from torch.nn import functional as F
 ### Params
 batch_size = 32
 context_length = 8
-train_iters = 10000
+train_iters = 3000
 emb_dim = 32
 estimate_loss_interval = 1000
 estimate_loss_iterations = 200
+lr = 1e-3
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -110,8 +111,8 @@ for b in range(batch_size):
     print('--------')
 
 
-## Baseline BigramLanguageModel: Predicts the next character based on the previous character.
-class BigramLanguageModel(nn.Module):
+
+class GPTLanguageModel(nn.Module):
     def __init__(self,vocab_size):
         super().__init__()
         self.embedding_table = nn.Embedding(vocab_size,emb_dim) ## vocab_size x embedding dimension
@@ -137,18 +138,20 @@ class BigramLanguageModel(nn.Module):
         return logits,loss
     
     def generate(self,contexts,max_tokens):
+        ## Input contexts: B x context_size
         for i in range(max_tokens):
-            logits, loss = self.forward(contexts)
+            contexts_cropped = contexts[:, -context_length:]  # Crop the context to context_length size
+            logits, loss = self.forward(contexts_cropped)
             logits = logits[:,-1,:] # Take only the last element to generate new text --> Now logits is batch_size x embedding_dimision
             probas = F.softmax(logits,dim = 1)
             next_char = torch.multinomial(probas,num_samples = 1) ## sample next char from a probability distribution
-            contexts = torch.cat((contexts,next_char),dim = 1)
+            contexts = torch.cat((contexts,next_char),dim = 1)  ## Append the generated text to the sequence
         return contexts
 
 
     
 
-model = BigramLanguageModel(vocab_size)
+model = GPTLanguageModel(vocab_size)
 logits, loss = model(x_batch,y_batch)
 print('logits shape:',logits.shape)
 print('The current loss: ',loss)
@@ -180,7 +183,7 @@ def estimate_loss():
 
 
 ## Retest the Model After Training
-optimizer = torch.optim.AdamW(model.parameters(),lr = 1e-3)
+optimizer = torch.optim.AdamW(model.parameters(),lr = lr)
 for step in range(train_iters):
     x_batch, y_batch = generate_batch('train')
 
@@ -200,7 +203,7 @@ print(loss.item())
 
 test_context = torch.zeros((1,1),dtype = torch.int64) 
 print('Generate Text using test context: ')
-print(decode(model.generate(test_context, max_tokens = 7)[0].tolist()))
+print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
 
 
 
