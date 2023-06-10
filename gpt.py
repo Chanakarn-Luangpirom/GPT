@@ -154,6 +154,37 @@ class MultiHeadAttention(nn.Module):
         output = torch.cat(output,dim = -1)
         output = self.proj(output) # (B,context, emb_dim)
         return output ##
+    
+
+class FeedForward(nn.Module):
+    def __init__(self,emb_dim):
+        super().__init__()
+
+        self.net = nn.Sequential(
+            nn.Linear(emb_dim, 4*emb_dim),
+            nn.ReLU(),
+            nn.Linear(4*emb_dim, emb_dim)
+            )
+
+    def forward(self,x):
+        return self.net(x)
+
+class TransformerBlock(nn.Module):
+    def __init__(self, emb_dim, n_head):
+        super().__init__()
+        head_size = emb_dim//n_head
+        self.attention = MultiHeadAttention(n_head, head_size)
+        self.feed_forward = FeedForward(emb_dim)
+        self.layer_norm1 = nn.LayerNorm(emb_dim)
+        self.layer_norm2 = nn.LayerNorm(emb_dim)
+
+    def forward(self,x):
+
+        ## Skip connection
+        x = x + self.attention(self.layer_norm1(x))
+        x = x + self.feed_forward(self.layer_norm2(x))  
+        return x
+
 
 
         
@@ -165,7 +196,8 @@ class GPTLanguageModel(nn.Module):
         super().__init__()
         self.embedding_table = nn.Embedding(vocab_size,emb_dim) ## vocab_size x embedding dimension
         self.position_embedding_table = nn.Embedding(context_length, emb_dim)
-        self.attention_head = MultiHeadAttention(num_heads = 4,head_size = 16)
+        self.transformer_blocks = nn.Sequential(*[TransformerBlock(emb_dim, n_head = 6) for _ in range(3)])  ##3 = number of transformer blocks
+        self.layer_norm_output = nn.LayerNorm(emb_dim)
         self.output_head = nn.Linear(emb_dim,vocab_size) #emb_dim x vocab_size
 
 
@@ -174,7 +206,8 @@ class GPTLanguageModel(nn.Module):
         token_emb = self.embedding_table(contexts) ## batch_size x context_length x embedding dimension
         position_emb = self.position_embedding_table(torch.arange(L,device = device)) ## context_length x embbedding dimension
         x = token_emb + position_emb
-        x = self.attention_head(x) ## (B,context,emb_dim)
+        x = self.transformer_blocks(x) ## (B,context,emb_dim)
+        x = self.layer_norm_output(x)
         logits = self.output_head(x) ## batch_size x context_length x vocab_size
         if targets is None:  ## Use for generating
             loss = None
