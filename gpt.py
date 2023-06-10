@@ -133,6 +133,29 @@ class Head(nn.Module):
         weights = F.softmax(weights, dim = -1)
         output = weights @ v # (B,context,context) @ (B, context, head) --> (B, context, head)
         return output
+    
+class MultiHeadAttention(nn.Module):
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+
+        heads = []
+        for _ in range(num_heads):
+            head = Head(head_size)
+            heads.append(head)
+        self.heads = nn.ModuleList(heads) ## Stores multiple head
+        self.proj = nn.Linear(head_size*num_heads, emb_dim)
+
+    def forward(self, x):
+        output = []
+        for h in self.heads:
+            head_output = h(x)
+            output.append(head_output)
+        
+        output = torch.cat(output,dim = -1)
+        output = self.proj(output) # (B,context, emb_dim)
+        return output ##
+
+
         
 
 
@@ -142,8 +165,8 @@ class GPTLanguageModel(nn.Module):
         super().__init__()
         self.embedding_table = nn.Embedding(vocab_size,emb_dim) ## vocab_size x embedding dimension
         self.position_embedding_table = nn.Embedding(context_length, emb_dim)
-        self.attention_head = Head(head_size = 16)
-        self.output_head = nn.Linear(16,vocab_size) #emb_dim x vocab_size
+        self.attention_head = MultiHeadAttention(num_heads = 4,head_size = 16)
+        self.output_head = nn.Linear(emb_dim,vocab_size) #emb_dim x vocab_size
 
 
     def forward(self,contexts,targets = None):
@@ -151,7 +174,7 @@ class GPTLanguageModel(nn.Module):
         token_emb = self.embedding_table(contexts) ## batch_size x context_length x embedding dimension
         position_emb = self.position_embedding_table(torch.arange(L,device = device)) ## context_length x embbedding dimension
         x = token_emb + position_emb
-        x = self.attention_head(x) ## (B,context,head_size)
+        x = self.attention_head(x) ## (B,context,emb_dim)
         logits = self.output_head(x) ## batch_size x context_length x vocab_size
         if targets is None:  ## Use for generating
             loss = None
