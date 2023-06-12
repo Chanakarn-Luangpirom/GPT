@@ -11,9 +11,10 @@ emb_dim = 32
 estimate_loss_interval = 1000
 estimate_loss_iterations = 200
 lr = 1e-3
-
+num_heads = 6
+num_blocks = 3
+dropout_pct = 0.2
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
 
 
 
@@ -44,8 +45,8 @@ def decode(indices):
         output.append(decoder[idx])
     return ''.join(output)
 
-print(encode('test encode'))
-print(decode(encode('test encode')))
+print('The encoded text is :', encode('test encode'))
+print('Decoding back:', decode(encode('test encode')))
 
 
 ## Encode the whole dataset
@@ -62,8 +63,6 @@ print('size of train:',len(train_data))
 print('size of val:',len(val_data))
 
 
-
-
 ### Single Data Loader
 # x = train_data[:context_length]
 # y = train_data[1:context_length+1]
@@ -74,7 +73,6 @@ print('size of val:',len(val_data))
 #     print('input:', context)
 #     print('target:', target)
 #     print('--------')
-
 
 
 ### Batch Data Loader
@@ -99,16 +97,19 @@ def generate_batch(split = 'train'):
 
     return x_batch,y_batch
 
-x_batch,y_batch = generate_batch()
-print('x_batch:', x_batch) ## batch_size x context_length
-print('y_batch:', y_batch) ## batch_size x context_length
+x_batch,y_batch = generate_batch() ## batch_size x context_length
+print('Sample of x_batch:', x_batch[0]) 
+print('Sample of y_batch:', y_batch[0]) 
 
+print('------------------------')
+print('Example of 1 batch input')
 for b in range(batch_size):
     for i in range(context_length):
         context = x_batch[b,:i+1]
         target = y_batch[b,i]
-        print('input:', context, ' target:',target)
-    print('--------')
+        if b==0:
+            print('input:', context, ' target:',target)
+print('------------------------')
 
 class Head(nn.Module):
     def __init__(self, head_size):
@@ -117,6 +118,7 @@ class Head(nn.Module):
         self.query = nn.Linear(emb_dim, head_size, bias = False)
         self.value = nn.Linear(emb_dim,head_size, bias = False)
         self.register_buffer('tril', torch.tril(torch.ones(context_length, context_length)))  ## Register Buffer is not trained by the optimizer
+        self.dropout = nn.Dropout(dropout_pct)
 
     def forward(self,x):
         #(B, context_length, head_size)
@@ -131,6 +133,7 @@ class Head(nn.Module):
         weights = weights * head_size**-0.5
         weights = weights.masked_fill(self.tril[:T,:T]==0, float('-inf'))  # Using :T because input context_size is smaller than the context size used in the model (T <= context_length)
         weights = F.softmax(weights, dim = -1)
+        weights = self.dropout(weights)
         output = weights @ v # (B,context,context) @ (B, context, head) --> (B, context, head)
         return output
     
@@ -142,8 +145,10 @@ class MultiHeadAttention(nn.Module):
         for _ in range(num_heads):
             head = Head(head_size)
             heads.append(head)
+
         self.heads = nn.ModuleList(heads) ## Stores multiple head
         self.proj = nn.Linear(head_size*num_heads, emb_dim)
+        self.dropout = nn.Dropout(dropout_pct)
 
     def forward(self, x):
         output = []
@@ -153,6 +158,7 @@ class MultiHeadAttention(nn.Module):
         
         output = torch.cat(output,dim = -1)
         output = self.proj(output) # (B,context, emb_dim)
+        output = self.dropout(output)
         return output ##
     
 
@@ -163,7 +169,8 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(emb_dim, 4*emb_dim),
             nn.ReLU(),
-            nn.Linear(4*emb_dim, emb_dim)
+            nn.Linear(4*emb_dim, emb_dim),
+            nn.Dropout(dropout_pct)
             )
 
     def forward(self,x):
@@ -186,17 +193,12 @@ class TransformerBlock(nn.Module):
         return x
 
 
-
-        
-
-
-
 class GPTLanguageModel(nn.Module):
     def __init__(self,vocab_size):
         super().__init__()
         self.embedding_table = nn.Embedding(vocab_size,emb_dim) ## vocab_size x embedding dimension
         self.position_embedding_table = nn.Embedding(context_length, emb_dim)
-        self.transformer_blocks = nn.Sequential(*[TransformerBlock(emb_dim, n_head = 6) for _ in range(3)])  ##3 = number of transformer blocks
+        self.transformer_blocks = nn.Sequential(*[TransformerBlock(emb_dim, n_head = num_heads) for _ in range(num_blocks)])  ## num_blocks = Number of Transformer Block
         self.layer_norm_output = nn.LayerNorm(emb_dim)
         self.output_head = nn.Linear(emb_dim,vocab_size) #emb_dim x vocab_size
 
@@ -235,7 +237,7 @@ class GPTLanguageModel(nn.Module):
 
 model = GPTLanguageModel(vocab_size)
 logits, loss = model(x_batch,y_batch)
-print('logits shape:',logits.shape)
+print('logits shape:',logits.shape)  #(Batch_size x context_length, Total Characters)
 print('The current loss: ',loss)
 
 # print(decoder)
@@ -287,7 +289,7 @@ print(loss.item())
 
 test_context = torch.zeros((1,1),dtype = torch.int64) 
 print('Generate Text using test context: ')
-print(decode(model.generate(test_context, max_tokens = 100)[0].tolist()))
+print(decode(model.generate(test_context, max_tokens = 300)[0].tolist()))
 
 
 
