@@ -1,0 +1,2 @@
+- An implmentation of GPT from scratch following the tutorial by Andrej Karpathy
+- https://www.youtube.com/watch?v=kCc8FmEb1nY&t=1s&ab_channel=AndrejKarpathy
